@@ -1,6 +1,6 @@
 [package]
 name = "termux-in-physics-world"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 
 [dependencies]
@@ -14,9 +14,10 @@ bevy = { version = "0.15", default-features = false, features = [
     "bevy_winit",
     "default_font",
     "x11",
+    "png",
 ] }
 bevy_rapier3d = { version = "0.28", features = ["simd-stable"] }
-portable-pty = "0.8"
+image = { version = "0.25", default-features = false, features = ["png"] }
 
 [[bin]]
 name = "termux-world"
