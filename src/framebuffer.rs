@@ -1,7 +1,4 @@
-//! Capture real Android framebuffer into CPU buffers for the physics-world screen.
-//!
-//! Primary path: `adb exec-out screencap -p` (PNG). Works without scrcpy.
-//! Capture runs on a background thread so the physics loop stays responsive.
+//! Sensory path: Android framebuffer into world-owned frame state.
 
 use std::io::Cursor;
 use std::process::{Command, Stdio};
@@ -42,7 +39,8 @@ impl Plugin for FramebufferPlugin {
         let frames_thread = frames.clone();
 
         thread::spawn(move || {
-            println!("[Framebuffer] Capture thread started (adb screencap)");
+            println!("[Framebuffer] World sensory capture thread (adb screencap)");
+            let mut ticks = 0u32;
             loop {
                 let serial_opt = serial_thread.lock().ok().and_then(|g| g.clone());
                 match capture_once(serial_opt.as_deref()) {
@@ -52,17 +50,13 @@ impl Plugin for FramebufferPlugin {
                         }
                     }
                     Err(e) => {
-                        // Avoid spam: occasional log
-                        static mut TICK: u32 = 0;
-                        unsafe {
-                            TICK = TICK.wrapping_add(1);
-                            if TICK % 20 == 1 {
-                                println!("[Framebuffer] capture: {e}");
-                            }
+                        ticks = ticks.wrapping_add(1);
+                        if ticks % 25 == 1 {
+                            println!("[Framebuffer] {e}");
                         }
                     }
                 }
-                thread::sleep(Duration::from_millis(100)); // ~10 FPS foundation
+                thread::sleep(Duration::from_millis(100));
             }
         });
 
@@ -94,7 +88,7 @@ fn capture_once(serial: Option<&str>) -> Result<FramePixels, String> {
 
     let output = cmd.output().map_err(|e| format!("adb: {e}"))?;
     if !output.status.success() || output.stdout.is_empty() {
-        return Err("screencap failed or empty (is a device online?)".into());
+        return Err("no frame (device offline?)".into());
     }
 
     let img = ImageReader::new(Cursor::new(output.stdout))
@@ -104,11 +98,9 @@ fn capture_once(serial: Option<&str>) -> Result<FramePixels, String> {
         .map_err(|e| e.to_string())?
         .to_rgba8();
 
-    let width = img.width();
-    let height = img.height();
     Ok(FramePixels {
-        width,
-        height,
+        width: img.width(),
+        height: img.height(),
         rgba: img.into_raw(),
     })
 }

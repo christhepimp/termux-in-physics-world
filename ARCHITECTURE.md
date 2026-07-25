@@ -2,51 +2,58 @@
 
 ## Principle
 
-**Physics engine = reality layer.**  
-**Android + Termux = operating environment that exists inside that reality.**
+**The physics engine defines the rules of existence.**
 
-Termux is not drawn by a synthetic VT100 alone. The pixels on the world screen come from a **real Android framebuffer** while Termux (and any other Android UI) runs in that Android environment.
+Android and Termux do not sit beside the simulation. They inhabit it. All observation and interaction is mediated by world systems so that, over time, the physics layer can constrain or extend what the operating environment is allowed to be.
 
 ## Layers
 
-1. **Physics (Bevy + Rapier3D)**  
-   Owns space, colliders, and the display body. Nothing “outside” the world is the primary UI.
-
-2. **Android runtime**  
-   Emulator (QEMU-based AVD) or physical device, addressed through ADB.
-
-3. **Termux**  
-   Standard open-source Termux installed in that Android environment. Processes, packages, and filesystem are Termux’s own.
-
-4. **Bridge**  
-   - Framebuffer: scrcpy video or `adb screencap` → RGBA → `Image` on `TerminalScreen`  
-   - Input: Bevy key events → `adb input` / `adb shell input text`  
-   - Control: `am start` for `com.termux`
-
-## Data flow
-
 ```
-Android (Termux UI drawn by Android)
-    → screencap / scrcpy
-        → FramebufferBridge
-            → Bevy Image asset
-                → StandardMaterial on TerminalScreen mesh
-                    → rendered in physics world
-
-Keyboard
-    → AndroidBridge.inject_*
-        → adb shell input
-            → Android InputManager
-                → Termux / focused window
+Physics Engine (Bevy + Rapier3D)
+├── Spatial reality (bodies, colliders, transforms)
+├── Display inhabitant surface (TerminalScreen entity)
+├── WorldControl (authority / policy)
+├── AndroidBridge (world-owned handle to guest OE)
+└── Framebuffer capture (world-owned sensory path)
+        │
+        ▼
+Android runtime (emulator or device)
+└── Termux (com.termux)
 ```
 
-## Why not “Termux as a crate”?
+## Interaction rule
 
-Termux is an Android application and bootstrap, not a portable library. Embedding the *real* environment means embedding or attaching a **real Android** that runs the Termux APK. This project does that attachment explicitly and keeps the physics world as the place the user looks at and types into.
+Application code must **not** talk to `adb` ad hoc. It goes through:
 
-## Future (out of v0 scope)
+1. Bevy systems in the physics app
+2. `WorldControl` gates (allowed / denied)
+3. `AndroidBridge` / framebuffer modules
 
-- Physics interactions with the screen chassis
-- Multiple Android displays / multi-seat
-- Building a minimal Android system image with Termux preinstalled
-- Running under native Android (Bevy as a native activity) with Termux as a sibling userspace — different packaging, same principle
+That keeps a single choke point for future resource, time, and device control.
+
+## Data paths (v0)
+
+**Perception (Android → world)**  
+Android framebuffer → capture thread → `FramebufferState` → texture on `TerminalScreen` mesh.
+
+**Action (world → Android)**  
+Keyboard events → `world_input_system` → `WorldControl.allows_input` → `AndroidBridge.inject_*`.
+
+**Lifecycle**  
+Startup / Ctrl+T → `WorldControl` → launch Termux intent on the guest.
+
+## Future control surface
+
+| Domain | World owns | Guest sees |
+|--------|------------|------------|
+| Hardware | Virtual device models in the world | Drivers / sysfs / binder (later) |
+| Resources | Budgets in `WorldControl` | cgroups / limits (later) |
+| Time | `time_scale`, world tick | guest clock skew (later) |
+| Network | Policy + virtual NIC (later) | packets only if world allows |
+| Storage | Virtual block backed by world (later) | block device / file |
+
+## Non-goals (v0)
+
+- Reimplementing Android or Termux
+- Gameplay interactions with the chassis
+- Convincing Android that fictional PCI devices exist (hook points only)

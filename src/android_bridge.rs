@@ -1,14 +1,12 @@
-//! Bridge to a real Android runtime that hosts Termux.
+//! World-owned handle to the Android inhabitant.
 //!
-//! Uses ADB only — does not reimplement Termux. The Android environment
-//! remains the authority for processes, packages, and filesystem.
+//! Not a parallel UI — only callable from world systems / WorldControl.
 
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 
 use bevy::prelude::*;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Resource)]
 pub struct AndroidBridge {
     pub serial: Option<String>,
     pub connected: bool,
@@ -66,26 +64,18 @@ impl AndroidBridge {
             println!("[Android] No device — cannot launch Termux");
             return;
         }
-        // Standard Termux activity
         let status = self
             .adb_base()
-            .args([
-                "shell",
-                "am",
-                "start",
-                "-n",
-                "com.termux/.HomeActivity",
-            ])
+            .args(["shell", "am", "start", "-n", "com.termux/.HomeActivity"])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
 
         match status {
             Ok(s) if s.success() => {
-                println!("[Android] Launch intent sent: com.termux/.HomeActivity");
+                println!("[Android] Termux HomeActivity start requested");
             }
-            Ok(_) => {
-                // Fallback: monkey launcher
+            _ => {
                 let _ = self
                     .adb_base()
                     .args([
@@ -100,9 +90,8 @@ impl AndroidBridge {
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .status();
-                println!("[Android] Fallback monkey launch for com.termux");
+                println!("[Android] Termux launch via monkey fallback");
             }
-            Err(e) => println!("[Android] adb failed: {e}"),
         }
     }
 
@@ -110,11 +99,7 @@ impl AndroidBridge {
         if !self.connected || text.is_empty() {
             return;
         }
-        // adb input text needs spaces as %s
-        let escaped = text
-            .replace(' ', "%s")
-            .replace('\'', "\\'")
-            .replace('"', "\\\"");
+        let escaped = text.replace(' ', "%s");
         let _ = self
             .adb_base()
             .args(["shell", "input", "text", &escaped])
@@ -157,43 +142,34 @@ impl Plugin for AndroidPlugin {
         let mut bridge = AndroidBridge::default();
         if bridge.refresh_device() {
             println!(
-                "[Android] Connected to device {:?}",
+                "[Android] Inhabitant runtime connected: {:?}",
                 bridge.serial.as_deref().unwrap_or("?")
             );
             if bridge.termux_installed() {
-                println!("[Android] Termux package com.termux is installed");
+                println!("[Android] Termux package present — requesting launch via world rules");
                 bridge.launch_termux();
                 bridge.termux_launched = true;
             } else {
-                println!("[Android] Termux NOT installed on device.");
-                println!("[Android] Install from F-Droid, then press Ctrl+T to launch.");
+                println!("[Android] Install Termux on the device, then Ctrl+T");
             }
         } else {
-            println!("[Android] No adb device. Start an emulator or connect a phone.");
-            println!("[Android] Example: emulator -avd <name> && adb wait-for-device");
+            println!("[Android] No adb device — start emulator or connect hardware");
         }
 
         app.insert_resource(bridge)
-            .add_systems(Update, periodic_device_refresh);
+            .add_systems(Update, reconnect_if_needed);
     }
 }
 
-fn periodic_device_refresh(mut bridge: ResMut<AndroidBridge>, time: Res<Time>) {
-    // Lightweight reconnect check ~every 3s via frame time accumulation
-    // (using a static-ish approach with resource field would be cleaner; keep simple)
-    let _ = time;
-    // Only refresh if disconnected
-    if !bridge.connected {
-        if bridge.refresh_device() {
-            println!(
-                "[Android] Device appeared: {:?}",
-                bridge.serial.as_deref().unwrap_or("?")
-            );
-            if bridge.termux_installed() && !bridge.termux_launched {
-                bridge.launch_termux();
-                bridge.termux_launched = true;
-            }
+fn reconnect_if_needed(mut bridge: ResMut<AndroidBridge>) {
+    if !bridge.connected && bridge.refresh_device() {
+        println!(
+            "[Android] Device online: {:?}",
+            bridge.serial.as_deref().unwrap_or("?")
+        );
+        if bridge.termux_installed() && !bridge.termux_launched {
+            bridge.launch_termux();
+            bridge.termux_launched = true;
         }
     }
-    let _ = Arc::new(());
 }

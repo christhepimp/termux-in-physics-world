@@ -1,9 +1,8 @@
-//! Real Termux (Android) environment inside a physics-engine world.
-//!
-//! Physics is the reality layer. Android hosts Termux; the framebuffer is
-//! shown on a mesh entity that exists in the Rapier world.
+//! Physics engine = reality / control layer.
+//! Android + Termux = inhabitants. All I/O is world-mediated.
 
 mod android_bridge;
+mod control;
 mod display;
 mod framebuffer;
 mod world;
@@ -13,6 +12,7 @@ use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
 use android_bridge::{AndroidBridge, AndroidPlugin};
+use control::{WorldCommand, WorldControl, WorldControlPlugin};
 use display::setup_screen_material;
 use framebuffer::{FramebufferPlugin, FramebufferState};
 use world::{spawn_physics_world, TerminalScreen};
@@ -21,20 +21,28 @@ fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Termux Inside Physics World".into(),
+                title: "Physics Reality — Android/Termux Inhabitant".into(),
                 resolution: (1280., 720.).into(),
                 ..default()
             }),
             ..default()
         }))
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
+        .add_plugins(WorldControlPlugin)
         .add_plugins(AndroidPlugin)
         .add_plugins(FramebufferPlugin)
         .add_systems(
             Startup,
             (setup_camera_light, spawn_physics_world, setup_screen_material).chain(),
         )
-        .add_systems(Update, (forward_input_to_android, apply_framebuffer_to_screen))
+        .add_systems(
+            Update,
+            (
+                world_input_system,
+                apply_framebuffer_to_screen,
+                control::process_world_commands,
+            ),
+        )
         .run();
 }
 
@@ -58,18 +66,28 @@ fn setup_camera_light(mut commands: Commands) {
         transform: Transform::from_xyz(2.5, 5.0, 2.0).looking_at(Vec3::ZERO, Vec3::Y),
         ..default()
     });
+
+    println!("[Reality] Physics engine is the control layer");
+    println!("[Reality] Android/Termux interact only through world systems");
 }
 
-fn forward_input_to_android(
+/// All keyboard interaction with the guest OE goes through WorldControl.
+fn world_input_system(
     keys: Res<ButtonInput<KeyCode>>,
     mut events: EventReader<KeyboardInput>,
+    mut control: ResMut<WorldControl>,
     bridge: Res<AndroidBridge>,
 ) {
     if keys.just_pressed(KeyCode::KeyQ) && keys.pressed(KeyCode::ControlLeft) {
-        std::process::exit(0);
+        control.enqueue(WorldCommand::ShutdownApp);
+        return;
     }
     if keys.just_pressed(KeyCode::KeyT) && keys.pressed(KeyCode::ControlLeft) {
-        bridge.launch_termux();
+        control.enqueue(WorldCommand::LaunchTermux);
+        return;
+    }
+
+    if !control.allows_input() {
         return;
     }
 
@@ -80,8 +98,8 @@ fn forward_input_to_android(
         match &ev.logical_key {
             Key::Character(c) => bridge.inject_text(c),
             Key::Space => bridge.inject_text(" "),
-            Key::Enter => bridge.inject_keyevent(66), // KEYCODE_ENTER
-            Key::Backspace => bridge.inject_keyevent(67), // KEYCODE_DEL
+            Key::Enter => bridge.inject_keyevent(66),
+            Key::Backspace => bridge.inject_keyevent(67),
             Key::Tab => bridge.inject_keyevent(61),
             Key::Escape => bridge.inject_keyevent(111),
             Key::ArrowUp => bridge.inject_keyevent(19),
@@ -94,10 +112,14 @@ fn forward_input_to_android(
 }
 
 fn apply_framebuffer_to_screen(
+    control: Res<WorldControl>,
     fb: Res<FramebufferState>,
     mut images: ResMut<Assets<Image>>,
     query: Query<&display::ScreenSurface, With<TerminalScreen>>,
 ) {
+    if !control.allows_display() {
+        return;
+    }
     let Some(frame) = fb.latest_frame() else {
         return;
     };
