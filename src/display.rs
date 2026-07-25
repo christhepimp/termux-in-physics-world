@@ -1,11 +1,11 @@
-//! In-world display surface for the Android/Termux inhabitant.
+//! Bind virtual display pixels to the inhabitant screen body.
 
 use bevy::prelude::*;
 use bevy::render::render_asset::RenderAssetUsages;
 use bevy::render::render_resource::{Extent3d, TextureDimension, TextureFormat};
 
 use crate::framebuffer::FramePixels;
-use crate::world::TerminalScreen;
+use crate::world::InhabitantScreen;
 
 #[derive(Component)]
 pub struct ScreenSurface {
@@ -17,12 +17,12 @@ pub fn setup_screen_material(
     mut images: ResMut<Assets<Image>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
     mut meshes: ResMut<Assets<Mesh>>,
-    query: Query<Entity, With<TerminalScreen>>,
+    query: Query<Entity, With<InhabitantScreen>>,
 ) {
     let w = 720u32;
     let h = 1280u32;
     let data = vec![16u8; (w * h * 4) as usize];
-    let image = Image::new(
+    let handle = images.add(Image::new(
         Extent3d {
             width: w,
             height: h,
@@ -32,8 +32,7 @@ pub fn setup_screen_material(
         data,
         TextureFormat::Rgba8UnormSrgb,
         RenderAssetUsages::default(),
-    );
-    let handle = images.add(image);
+    ));
 
     let material = materials.add(StandardMaterial {
         base_color_texture: Some(handle.clone()),
@@ -47,14 +46,13 @@ pub fn setup_screen_material(
             MeshMaterial3d(material),
             ScreenSurface { image: handle },
         ));
-        println!("[Display] Inhabitant screen bound to physics entity");
+        println!("[Display] Virtual display bound to InhabitantScreen entity");
     }
 }
 
 pub fn blit_frame_into_image(image: &mut Image, frame: &FramePixels) {
     let dst_w = image.width() as usize;
     let dst_h = image.height() as usize;
-
     if dst_w != frame.width as usize || dst_h != frame.height as usize {
         *image = Image::new(
             Extent3d {
@@ -69,7 +67,6 @@ pub fn blit_frame_into_image(image: &mut Image, frame: &FramePixels) {
         );
         return;
     }
-
     let Some(dst) = image.data.as_mut() else {
         return;
     };

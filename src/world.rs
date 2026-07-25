@@ -1,13 +1,13 @@
-//! Spatial reality — the place Android/Termux are displayed as inhabitants.
+//! Spatial reality inhabited by the Android/Termux environment.
 
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
 #[derive(Component)]
-pub struct TerminalScreen;
+pub struct InhabitantScreen;
 
 #[derive(Component)]
-pub struct TerminalChassis;
+pub struct InhabitantChassis;
 
 pub fn spawn_physics_world(
     mut commands: Commands,
@@ -25,7 +25,7 @@ pub fn spawn_physics_world(
 
     commands.spawn((
         Name::new("InhabitantChassis"),
-        TerminalChassis,
+        InhabitantChassis,
         Mesh3d(meshes.add(Cuboid::new(1.75, 1.2, 0.1))),
         MeshMaterial3d(materials.add(Color::srgb(0.06, 0.07, 0.08))),
         Transform::from_xyz(0.0, 1.15, -0.05),
@@ -35,11 +35,11 @@ pub fn spawn_physics_world(
 
     commands.spawn((
         Name::new("InhabitantScreen"),
-        TerminalScreen,
+        InhabitantScreen,
         Transform::from_xyz(0.0, 1.18, 0.02),
         RigidBody::Fixed,
         Collider::cuboid(0.8, 0.5, 0.01),
     ));
 
-    println!("[Physics] Spatial reality online — display surface is a world body");
+    println!("[Physics] Inhabitant screen is a body inside the world boundary");
 }

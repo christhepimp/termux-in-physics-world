@@ -1,36 +1,19 @@
-# Control Plane Foundation
+# World Control Plane
 
-`WorldControl` is the physics world's authority object. v0 implements **structure and gates**, not full enforcement backends.
+`WorldControl` is the physics world’s authority object over the Android inhabitant.
 
-## Fields (conceptual)
+## Gates (enforced in v0)
 
-| Field | v0 behavior | Future |
-|-------|-------------|--------|
-| `environment_powered` | Must be true for input/launch | Tie to in-world power entities |
-| `input_enabled` | Gate keyboard injection | Disable when world rules say so |
-| `display_enabled` | Gate applying framebuffer | Blank screen under world policy |
-| `time_scale` | Stored (1.0) | Drive guest time dilation |
-| `cpu_budget` / `ram_budget` / … | Placeholders | Enforce via emulator hooks / cgroups |
-| `virtual_devices` | Empty list | Register devices Android will see |
-| `commands` | Queue of `WorldCommand` | Scripted world→OE control |
+| Gate | Effect |
+|------|--------|
+| `environment_powered` | If false: no input, no display update, no Termux launch |
+| `input_enabled` | Virtual input ignored |
+| `display_enabled` | Framebuffer not applied to screen |
 
-## WorldCommand (extensible)
+## Commands
 
-```text
-LaunchTermux
-SetInputEnabled(bool)
-SetDisplayEnabled(bool)
-SetTimeScale(f32)
-SetResourceBudget { kind, limit }
-RegisterVirtualDevice { id, class }
-ShutdownGuest
-```
+`LaunchTermux` · `SetInputEnabled` · `SetDisplayEnabled` · `SetEnvironmentPowered` · `SetTimeScale` · `SetResourceBudget` · `RegisterVirtualDevice` · `ShutdownGuest` · `ShutdownApp`
 
-v0 executes a subset (launch, input/display flags). Remaining variants log and reserve behavior.
+## Resources & devices (foundation)
 
-## Path to “physics defines what Termux can do”
-
-1. **v0** — Mediate I/O; hold policy state  
-2. **v1** — Enforce budgets on emulator process; pause capture when unpowered  
-3. **v2** — Virtual devices (block, net) implemented in-world, exposed to Android  
-4. **v3** — World events (damage, power loss) automatically issue `WorldCommand`s  
+Budgets and `virtual_devices` are stored now; enforcement backends come later when virtual hardware is implemented inside the world.

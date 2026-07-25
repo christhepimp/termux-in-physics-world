@@ -1,27 +1,29 @@
-//! Physics engine = reality / control layer.
-//! Android + Termux = inhabitants. All I/O is world-mediated.
+//! Physics engine = reality / world control.
+//! Android + Termux = inhabitants. No external control path.
 
-mod android_bridge;
+mod android_runtime;
 mod control;
 mod display;
 mod framebuffer;
+mod virtual_io;
 mod world;
 
 use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
-use android_bridge::{AndroidBridge, AndroidPlugin};
+use android_runtime::{AndroidRuntime, AndroidRuntimePlugin};
 use control::{WorldCommand, WorldControl, WorldControlPlugin};
 use display::setup_screen_material;
 use framebuffer::{FramebufferPlugin, FramebufferState};
-use world::{spawn_physics_world, TerminalScreen};
+use virtual_io::{VirtualDisplay, VirtualInput};
+use world::{spawn_physics_world, InhabitantScreen};
 
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
-                title: "Physics Reality — Android/Termux Inhabitant".into(),
+                title: "Physics Reality (Android/Termux Inhabitant)".into(),
                 resolution: (1280., 720.).into(),
                 ..default()
             }),
@@ -29,7 +31,7 @@ fn main() {
         }))
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(WorldControlPlugin)
-        .add_plugins(AndroidPlugin)
+        .add_plugins(AndroidRuntimePlugin)
         .add_plugins(FramebufferPlugin)
         .add_systems(
             Startup,
@@ -38,8 +40,8 @@ fn main() {
         .add_systems(
             Update,
             (
-                world_input_system,
-                apply_framebuffer_to_screen,
+                world_virtual_input_system,
+                world_virtual_display_system,
                 control::process_world_commands,
             ),
         )
@@ -67,16 +69,17 @@ fn setup_camera_light(mut commands: Commands) {
         ..default()
     });
 
-    println!("[Reality] Physics engine is the control layer");
-    println!("[Reality] Android/Termux interact only through world systems");
+    println!("[World] Physics engine is the reality boundary");
+    println!("[World] Android/Termux have no separate window or control path");
 }
 
-/// All keyboard interaction with the guest OE goes through WorldControl.
-fn world_input_system(
+/// Virtual input path: user → physics window → world → guest only.
+fn world_virtual_input_system(
     keys: Res<ButtonInput<KeyCode>>,
     mut events: EventReader<KeyboardInput>,
     mut control: ResMut<WorldControl>,
-    bridge: Res<AndroidBridge>,
+    mut vinput: ResMut<VirtualInput>,
+    runtime: Res<AndroidRuntime>,
 ) {
     if keys.just_pressed(KeyCode::KeyQ) && keys.pressed(KeyCode::ControlLeft) {
         control.enqueue(WorldCommand::ShutdownApp);
@@ -96,28 +99,30 @@ fn world_input_system(
             continue;
         }
         match &ev.logical_key {
-            Key::Character(c) => bridge.inject_text(c),
-            Key::Space => bridge.inject_text(" "),
-            Key::Enter => bridge.inject_keyevent(66),
-            Key::Backspace => bridge.inject_keyevent(67),
-            Key::Tab => bridge.inject_keyevent(61),
-            Key::Escape => bridge.inject_keyevent(111),
-            Key::ArrowUp => bridge.inject_keyevent(19),
-            Key::ArrowDown => bridge.inject_keyevent(20),
-            Key::ArrowLeft => bridge.inject_keyevent(21),
-            Key::ArrowRight => bridge.inject_keyevent(22),
+            Key::Character(c) => vinput.text(c, &runtime),
+            Key::Space => vinput.text(" ", &runtime),
+            Key::Enter => vinput.key(66, &runtime),
+            Key::Backspace => vinput.key(67, &runtime),
+            Key::Tab => vinput.key(61, &runtime),
+            Key::Escape => vinput.key(111, &runtime),
+            Key::ArrowUp => vinput.key(19, &runtime),
+            Key::ArrowDown => vinput.key(20, &runtime),
+            Key::ArrowLeft => vinput.key(21, &runtime),
+            Key::ArrowRight => vinput.key(22, &runtime),
             _ => {}
         }
     }
 }
 
-fn apply_framebuffer_to_screen(
+/// Virtual display path: guest framebuffer → world-owned texture on physics entity.
+fn world_virtual_display_system(
     control: Res<WorldControl>,
     fb: Res<FramebufferState>,
+    vdisp: Res<VirtualDisplay>,
     mut images: ResMut<Assets<Image>>,
-    query: Query<&display::ScreenSurface, With<TerminalScreen>>,
+    query: Query<&display::ScreenSurface, With<InhabitantScreen>>,
 ) {
-    if !control.allows_display() {
+    if !control.allows_display() || !vdisp.enabled {
         return;
     }
     let Some(frame) = fb.latest_frame() else {

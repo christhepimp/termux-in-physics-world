@@ -1,4 +1,4 @@
-//! Sensory path: Android framebuffer into world-owned frame state.
+//! Capture guest frames into world sensory state (not an external viewer).
 
 use std::io::Cursor;
 use std::process::{Command, Stdio};
@@ -34,24 +34,22 @@ impl Plugin for FramebufferPlugin {
     fn build(&self, app: &mut App) {
         let serial = Arc::new(Mutex::new(None::<String>));
         let frames = Arc::new(Mutex::new(None::<FramePixels>));
-
-        let serial_thread = serial.clone();
-        let frames_thread = frames.clone();
+        let serial_t = serial.clone();
+        let frames_t = frames.clone();
 
         thread::spawn(move || {
-            println!("[Framebuffer] World sensory capture thread (adb screencap)");
             let mut ticks = 0u32;
             loop {
-                let serial_opt = serial_thread.lock().ok().and_then(|g| g.clone());
-                match capture_once(serial_opt.as_deref()) {
+                let ser = serial_t.lock().ok().and_then(|g| g.clone());
+                match capture_once(ser.as_deref()) {
                     Ok(frame) => {
-                        if let Ok(mut g) = frames_thread.lock() {
+                        if let Ok(mut g) = frames_t.lock() {
                             *g = Some(frame);
                         }
                     }
                     Err(e) => {
                         ticks = ticks.wrapping_add(1);
-                        if ticks % 25 == 1 {
+                        if ticks % 30 == 1 {
                             println!("[Framebuffer] {e}");
                         }
                     }
@@ -64,16 +62,20 @@ impl Plugin for FramebufferPlugin {
             inner: frames,
             serial,
         })
-        .add_systems(Update, sync_serial_from_bridge);
+        .init_resource::<crate::virtual_io::VirtualDisplay>()
+        .init_resource::<crate::virtual_io::VirtualInput>()
+        .add_systems(Update, sync_serial);
+
+        println!("[VirtualIO] World-owned display + input active");
     }
 }
 
-fn sync_serial_from_bridge(
-    bridge: Res<crate::android_bridge::AndroidBridge>,
+fn sync_serial(
+    runtime: Res<crate::android_runtime::AndroidRuntime>,
     fb: Res<FramebufferState>,
 ) {
     if let Ok(mut g) = fb.serial.lock() {
-        *g = bridge.serial.clone();
+        *g = runtime.serial.clone();
     }
 }
 
@@ -85,19 +87,16 @@ fn capture_once(serial: Option<&str>) -> Result<FramePixels, String> {
     cmd.args(["exec-out", "screencap", "-p"]);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::null());
-
     let output = cmd.output().map_err(|e| format!("adb: {e}"))?;
     if !output.status.success() || output.stdout.is_empty() {
-        return Err("no frame (device offline?)".into());
+        return Err("waiting for inhabitant framebuffer".into());
     }
-
     let img = ImageReader::new(Cursor::new(output.stdout))
         .with_guessed_format()
         .map_err(|e| e.to_string())?
         .decode()
         .map_err(|e| e.to_string())?
         .to_rgba8();
-
     Ok(FramePixels {
         width: img.width(),
         height: img.height(),

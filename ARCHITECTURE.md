@@ -2,58 +2,50 @@
 
 ## Principle
 
-**The physics engine defines the rules of existence.**
+Android and Termux are **inhabitants** of a physics-engine-controlled reality. They are not an external system that the engine “watches.”
 
-Android and Termux do not sit beside the simulation. They inhabit it. All observation and interaction is mediated by world systems so that, over time, the physics layer can constrain or extend what the operating environment is allowed to be.
+- The **only** interactive window is the physics application.
+- The Android runtime is started or adopted as a **world-managed process** (headless).
+- Perception (display) and action (input) are **virtual devices owned by the world**.
+- `WorldControl` is the authority for what the inhabitant may experience.
 
-## Layers
+## Hierarchy
 
 ```
-Physics Engine (Bevy + Rapier3D)
-├── Spatial reality (bodies, colliders, transforms)
-├── Display inhabitant surface (TerminalScreen entity)
-├── WorldControl (authority / policy)
-├── AndroidBridge (world-owned handle to guest OE)
-└── Framebuffer capture (world-owned sensory path)
-        │
-        ▼
-Android runtime (emulator or device)
-└── Termux (com.termux)
+Physics Engine (Reality / World Control)
+├── Spatial world (Rapier bodies: floor, chassis, screen)
+├── VirtualDisplay (world-owned)
+├── VirtualInput (world-owned)
+├── WorldControl (power, time, resources, virtual devices, commands)
+└── AndroidRuntime (headless guest process / adb serial)
+      └── Termux (real app inside Android)
 ```
 
-## Interaction rule
+## Boundary rule
 
-Application code must **not** talk to `adb` ad hoc. It goes through:
+```
+User → Physics window → World systems → VirtualDisplay / VirtualInput / WorldControl
+                                              ↓
+                                    AndroidRuntime (headless)
+                                              ↓
+                                           Termux
+```
 
-1. Bevy systems in the physics app
-2. `WorldControl` gates (allowed / denied)
-3. `AndroidBridge` / framebuffer modules
+There is no first-class path: User → Emulator window → Termux.
 
-That keeps a single choke point for future resource, time, and device control.
+## Headless embedding
 
-## Data paths (v0)
+When `VCE_AVD_NAME` is set, the world attempts:
 
-**Perception (Android → world)**  
-Android framebuffer → capture thread → `FramebufferState` → texture on `TerminalScreen` mesh.
+```text
+emulator -avd <name> -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
+```
 
-**Action (world → Android)**  
-Keyboard events → `world_input_system` → `WorldControl.allows_input` → `AndroidBridge.inject_*`.
+so the guest does not present a parallel desktop UI. Frames enter the world only through the capture path onto the `InhabitantScreen` entity.
 
-**Lifecycle**  
-Startup / Ctrl+T → `WorldControl` → launch Termux intent on the guest.
+## Future
 
-## Future control surface
-
-| Domain | World owns | Guest sees |
-|--------|------------|------------|
-| Hardware | Virtual device models in the world | Drivers / sysfs / binder (later) |
-| Resources | Budgets in `WorldControl` | cgroups / limits (later) |
-| Time | `time_scale`, world tick | guest clock skew (later) |
-| Network | Policy + virtual NIC (later) | packets only if world allows |
-| Storage | Virtual block backed by world (later) | block device / file |
-
-## Non-goals (v0)
-
-- Reimplementing Android or Termux
-- Gameplay interactions with the chassis
-- Convincing Android that fictional PCI devices exist (hook points only)
+- Virtual CPU/RAM/storage/sensors registered in `WorldControl.virtual_devices` and backed by world systems
+- Resource budgets enforced on the runtime process
+- Time scale affecting guest clock
+- World events (power loss) issuing `WorldCommand`s automatically

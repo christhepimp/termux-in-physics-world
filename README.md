@@ -1,79 +1,67 @@
-# Operating Environment Inside a Physics Reality
+# Android + Termux as Inhabitants of a Physics World
 
-Prototype of a **real Android + Termux environment** that exists **inside** a physics-engine world and is reachable only through that world.
+This prototype embeds a **real Android runtime** (with **real Termux**) so that it exists **inside the physics engine’s world boundary**.
 
-The physics engine is not a viewer. It is the **reality and control layer**. Android and Termux are **inhabitants** of that reality.
+The physics engine is not a viewer of an external phone. It is the **reality layer and authority**. Android is a world-managed operating environment. Termux is the user environment inside that Android. There is **no supported external desktop window** and **no separate control path** around the physics world.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                 PHYSICS ENGINE (reality layer)              │
-│                                                             │
-│  World rules · space · display bodies · control plane       │
-│       │                                                     │
-│       │ mediates every interaction                          │
-│       ▼                                                     │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │  Android (operating environment)                      │  │
-│  │     └── Termux (user environment)                     │  │
-│  │           processes · packages · filesystem · UI      │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────┘
+Physics Engine  =  Reality / World Control Layer
+        |
+        +-- World-owned virtual display (physics entity + texture)
+        +-- World-owned virtual input
+        +-- WorldControl (resources, power, time, devices)
+        |
+        +-- Android Runtime  (headless, spawned/attached by the world)
+                |
+                +-- Real Termux Environment
 ```
 
-## Goals
+## What “inside the world” means here
 
-| Now (v0) | Later |
-|----------|--------|
-| Real Android + Termux attached to the world | Virtual hardware Android treats as real |
-| Display inside the physics world | CPU / RAM / storage / network budgets |
-| Input/output only via world-mediated bridges | World-controlled time |
-| Control-plane foundation (`WorldControl`) | Physics rules that constrain the OE |
-
-## Architecture
-
-| Layer | Responsibility |
-|-------|----------------|
-| **Physics engine** | Reality: entities, display surface, **WorldControl** authority |
-| **Android** | Guest operating environment (emulator or device) |
-| **Termux** | User environment inside Android |
-| **Bridges** | Framebuffer + input — *only* used through world systems |
-
-Nothing outside the physics world is the primary UI. Typing and seeing Android/Termux both go through world systems.
+| Requirement | Implementation |
+|-------------|----------------|
+| Physics is authority | `WorldControl` gates power, input, display, resources |
+| Android not a separate UI | Emulator runs **headless** (`-no-window`); pixels only on the world screen |
+| Display owned by world | `VirtualDisplay` → texture on `InhabitantScreen` body |
+| Input owned by world | `VirtualInput` → only via world systems → guest |
+| Termux is real | `com.termux` on that Android, launched under world policy |
+| No side path | App code must not talk to the guest except through world modules |
 
 ## First version
 
-- [x] Real Android via ADB (emulator or device)
-- [x] Real Termux launch (`com.termux`) when installed
-- [x] Framebuffer → texture on a **physics entity**
-- [x] Keyboard → world system → Android input injection
-- [x] `WorldControl` resource: policy hooks for power, time, resources, devices
-- [ ] Gameplay physics (grabbing, throwing) — **not yet**
-- [ ] Full virtual device backend — **foundation only**
+- [x] Physics world (Bevy + Rapier) as the only user-facing window
+- [x] Headless Android runtime management (`AndroidRuntime`)
+- [x] Virtual display owned by the world (framebuffer → screen entity)
+- [x] Virtual input owned by the world
+- [x] `WorldControl` for power / I/O / resource / device policy foundation
+- [x] Real Termux launch when package present
+- [ ] Full virtual CPU/RAM/block hardware backends (hooks only)
+- [ ] Gameplay physics interactions (not yet)
 
 ## Requirements
 
-- `adb` on `PATH`
-- Android emulator **or** device with debugging
-- Termux installed on that Android ([F-Droid](https://f-droid.org/packages/com.termux/))
+- Android SDK: `adb`, and optionally `emulator`
+- An AVD name (or an already-running **headless** emulator/device)
+- Termux installed in that Android environment
 
 ```bash
-adb devices
+# Option A — let the world start a headless AVD
+export VCE_AVD_NAME=YourAvdName
+cargo run
+
+# Option B — you start headless yourself, world attaches
+emulator -avd YourAvdName -no-window -no-audio -gpu swiftshader_indirect &
+adb wait-for-device
 cargo run
 ```
 
-**Ctrl+T** — launch Termux · **Ctrl+Q** — quit
-
-## Control foundation
-
-`WorldControl` is the single place future rules attach:
-
-- Environment power / allowed interaction
-- Time scale (world clock vs guest)
-- Resource budgets (CPU, RAM, storage, network) — policy stubs
-- Virtual device registry — empty, ready for devices the world will present to Android
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) and [CONTROL_PLANE.md](CONTROL_PLANE.md).
+**Controls (only through the physics app window)**  
+Typing → world virtual input → Android/Termux  
+**Ctrl+T** → world command: launch Termux  
+**Ctrl+Q** → world command: shutdown app  
 
 ## Stack
 
-Rust · Bevy · Rapier3D · ADB (Android / Termux host)
+Rust · Bevy · Rapier3D · Android emulator/ADB (headless guest)
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) and [CONTROL_PLANE.md](CONTROL_PLANE.md).
