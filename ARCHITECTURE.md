@@ -1,51 +1,41 @@
-# Architecture
+# In-process architecture
 
-## Principle
+## Goal
 
-Android and Termux are **inhabitants** of a physics-engine-controlled reality. They are not an external system that the engine “watches.”
+Compile and run so the **physics engine process** is the container for the OE integration. Display and input are in-process. On Android, the engine itself is the Android app process.
 
-- The **only** interactive window is the physics application.
-- The Android runtime is started or adopted as a **world-managed process** (headless).
-- Perception (display) and action (input) are **virtual devices owned by the world**.
-- `WorldControl` is the authority for what the inhabitant may experience.
-
-## Hierarchy
+## Process diagram
 
 ```
-Physics Engine (Reality / World Control)
-├── Spatial world (Rapier bodies: floor, chassis, screen)
-├── VirtualDisplay (world-owned)
-├── VirtualInput (world-owned)
-├── WorldControl (power, time, resources, virtual devices, commands)
-└── AndroidRuntime (headless guest process / adb serial)
-      └── Termux (real app inside Android)
+termux-world (single process)
+├── Main thread: Bevy + Rapier
+├── Runtime service thread: maintain guest connection / pump
+├── Capture thread: fill SharedFrameBuffer
+├── SharedFrameBuffer (Arc mutex bytes)  ← virtual display
+├── InputCommand queue (Arc mutex)       ← virtual input
+└── WorldControl (policy)
 ```
 
-## Boundary rule
+## Targets
 
-```
-User → Physics window → World systems → VirtualDisplay / VirtualInput / WorldControl
-                                              ↓
-                                    AndroidRuntime (headless)
-                                              ↓
-                                           Termux
-```
+### `cfg(not(target_os = "android"))` — desktop
 
-There is no first-class path: User → Emulator window → Termux.
+- `EmbeddedRuntime` uses host tools only as a **backend** to a world-owned guest.
+- All buffers and queues are in-process.
+- Prefer headless emulator under this process (`VCE_AVD_NAME`).
 
-## Headless embedding
+### `cfg(target_os = "android")` — device
 
-When `VCE_AVD_NAME` is set, the world attempts:
+- Physics app is a native Android activity (cargo-apk).
+- `android_native` module: JNI entry points for surface/input (stubs ready for binding).
+- Termux launched via Android intents from **this** process — no host adb.
 
-```text
-emulator -avd <name> -no-window -no-audio -no-boot-anim -gpu swiftshader_indirect
-```
+## Modules
 
-so the guest does not present a parallel desktop UI. Frames enter the world only through the capture path onto the `InhabitantScreen` entity.
-
-## Future
-
-- Virtual CPU/RAM/storage/sensors registered in `WorldControl.virtual_devices` and backed by world systems
-- Resource budgets enforced on the runtime process
-- Time scale affecting guest clock
-- World events (power loss) issuing `WorldCommand`s automatically
+| Module | Role |
+|--------|------|
+| `embedded_runtime` | In-process runtime service |
+| `shared_buffer` | SharedFrameBuffer + InputQueue |
+| `android_native` | Android-target JNI / intent hooks |
+| `control` | WorldControl |
+| `world` / `display` | Physics entities + texture from shared buffer |

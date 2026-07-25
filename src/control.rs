@@ -1,10 +1,8 @@
-//! WorldControl — sole authority over what the inhabitant environment experiences.
-
 use std::collections::VecDeque;
 
 use bevy::prelude::*;
 
-use crate::android_runtime::AndroidRuntime;
+use crate::embedded_runtime::EmbeddedRuntime;
 
 #[derive(Clone, Debug)]
 pub enum ResourceKind {
@@ -58,7 +56,16 @@ impl Default for WorldControl {
             ram_budget_mb: 4096.0,
             storage_budget_mb: 64_000.0,
             network_budget_kbps: 100_000.0,
-            virtual_devices: Vec::new(),
+            virtual_devices: vec![
+                VirtualDeviceSpec {
+                    id: "world-display-0".into(),
+                    class: "virtual_display".into(),
+                },
+                VirtualDeviceSpec {
+                    id: "world-input-0".into(),
+                    class: "virtual_input".into(),
+                },
+            ],
             commands: VecDeque::new(),
         }
     }
@@ -84,62 +91,37 @@ pub struct WorldControlPlugin;
 impl Plugin for WorldControlPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<WorldControl>();
-        // Seed virtual display/input device records as world-owned.
-        app.world_mut()
-            .resource_mut::<WorldControl>()
-            .virtual_devices
-            .push(VirtualDeviceSpec {
-                id: "world-display-0".into(),
-                class: "virtual_display".into(),
-            });
-        app.world_mut()
-            .resource_mut::<WorldControl>()
-            .virtual_devices
-            .push(VirtualDeviceSpec {
-                id: "world-input-0".into(),
-                class: "virtual_input".into(),
-            });
-        println!("[WorldControl] Authority online");
+        println!("[WorldControl] In-process authority online");
     }
 }
 
 pub fn process_world_commands(
     mut control: ResMut<WorldControl>,
-    runtime: Res<AndroidRuntime>,
+    runtime: Res<EmbeddedRuntime>,
 ) {
     while let Some(cmd) = control.commands.pop_front() {
         match cmd {
             WorldCommand::LaunchTermux => {
                 if control.environment_powered {
-                    runtime.launch_termux();
-                } else {
-                    println!("[WorldControl] LaunchTermux denied (unpowered)");
+                    runtime.request_launch_termux();
                 }
             }
             WorldCommand::SetInputEnabled(v) => control.input_enabled = v,
             WorldCommand::SetDisplayEnabled(v) => control.display_enabled = v,
             WorldCommand::SetEnvironmentPowered(v) => control.environment_powered = v,
-            WorldCommand::SetTimeScale(s) => {
-                control.time_scale = s.max(0.0);
-                println!("[WorldControl] time_scale={} (guest bind later)", control.time_scale);
-            }
-            WorldCommand::SetResourceBudget { kind, limit } => {
-                match kind {
-                    ResourceKind::Cpu => control.cpu_budget = limit,
-                    ResourceKind::Ram => control.ram_budget_mb = limit,
-                    ResourceKind::Storage => control.storage_budget_mb = limit,
-                    ResourceKind::Network => control.network_budget_kbps = limit,
-                }
-                println!("[WorldControl] budget {kind:?}={limit}");
-            }
+            WorldCommand::SetTimeScale(s) => control.time_scale = s.max(0.0),
+            WorldCommand::SetResourceBudget { kind, limit } => match kind {
+                ResourceKind::Cpu => control.cpu_budget = limit,
+                ResourceKind::Ram => control.ram_budget_mb = limit,
+                ResourceKind::Storage => control.storage_budget_mb = limit,
+                ResourceKind::Network => control.network_budget_kbps = limit,
+            },
             WorldCommand::RegisterVirtualDevice { id, class } => {
                 control.virtual_devices.push(VirtualDeviceSpec { id, class });
             }
-            WorldCommand::ShutdownGuest => {
-                runtime.shutdown_guest();
-            }
+            WorldCommand::ShutdownGuest => runtime.shutdown(),
             WorldCommand::ShutdownApp => {
-                runtime.shutdown_guest();
+                runtime.shutdown();
                 std::process::exit(0);
             }
         }

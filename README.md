@@ -1,67 +1,63 @@
-# Android + Termux as Inhabitants of a Physics World
+# Android + Termux Inside the Physics Engine Process
 
-This prototype embeds a **real Android runtime** (with **real Termux**) so that it exists **inside the physics engine’s world boundary**.
-
-The physics engine is not a viewer of an external phone. It is the **reality layer and authority**. Android is a world-managed operating environment. Termux is the user environment inside that Android. There is **no supported external desktop window** and **no separate control path** around the physics world.
+The physics engine process **owns** the operating environment. Android/Termux are not a separate app you remote-control from outside — their runtime service, display buffer, and input path live **inside the same process boundary** as the physics world (Bevy).
 
 ```
-Physics Engine  =  Reality / World Control Layer
-        |
-        +-- World-owned virtual display (physics entity + texture)
-        +-- World-owned virtual input
-        +-- WorldControl (resources, power, time, devices)
-        |
-        +-- Android Runtime  (headless, spawned/attached by the world)
-                |
-                +-- Real Termux Environment
+┌─ physics engine process (termux-world) ─────────────────────┐
+│  Rapier / Bevy world                                        │
+│  WorldControl · VirtualDisplay · VirtualInput               │
+│  EmbeddedRuntime (in-process threads + shared frame buffer) │
+│       │                                                     │
+│       ├── [Android APK target] ART + Termux in same app     │
+│       └── [Desktop] world-owned headless guest + in-proc I/O│
+└─────────────────────────────────────────────────────────────┘
 ```
 
-## What “inside the world” means here
+## Compile / run modes
 
-| Requirement | Implementation |
-|-------------|----------------|
-| Physics is authority | `WorldControl` gates power, input, display, resources |
-| Android not a separate UI | Emulator runs **headless** (`-no-window`); pixels only on the world screen |
-| Display owned by world | `VirtualDisplay` → texture on `InhabitantScreen` body |
-| Input owned by world | `VirtualInput` → only via world systems → guest |
-| Termux is real | `com.termux` on that Android, launched under world policy |
-| No side path | App code must not talk to the guest except through world modules |
-
-## First version
-
-- [x] Physics world (Bevy + Rapier) as the only user-facing window
-- [x] Headless Android runtime management (`AndroidRuntime`)
-- [x] Virtual display owned by the world (framebuffer → screen entity)
-- [x] Virtual input owned by the world
-- [x] `WorldControl` for power / I/O / resource / device policy foundation
-- [x] Real Termux launch when package present
-- [ ] Full virtual CPU/RAM/block hardware backends (hooks only)
-- [ ] Gameplay physics interactions (not yet)
-
-## Requirements
-
-- Android SDK: `adb`, and optionally `emulator`
-- An AVD name (or an already-running **headless** emulator/device)
-- Termux installed in that Android environment
+### 1. Desktop (development)
 
 ```bash
-# Option A — let the world start a headless AVD
-export VCE_AVD_NAME=YourAvdName
 cargo run
-
-# Option B — you start headless yourself, world attaches
-emulator -avd YourAvdName -no-window -no-audio -gpu swiftshader_indirect &
-adb wait-for-device
+# optional: world-spawned headless AVD
+export VCE_AVD_NAME=YourAvdName
 cargo run
 ```
 
-**Controls (only through the physics app window)**  
-Typing → world virtual input → Android/Termux  
-**Ctrl+T** → world command: launch Termux  
-**Ctrl+Q** → world command: shutdown app  
+The physics **process** hosts:
+- physics simulation
+- in-process capture thread writing into a **shared frame buffer**
+- in-process input injection path
+- optional world-owned headless emulator child (still under this process tree)
 
-## Stack
+There is no separate control UI. The Bevy window is the only window.
 
-Rust · Bevy · Rapier3D · Android emulator/ADB (headless guest)
+### 2. Android (true same-process inhabitant)
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) and [CONTROL_PLANE.md](CONTROL_PLANE.md).
+Build the physics engine **as an Android application** so it runs under ART next to Termux in the same userspace/device process model:
+
+```bash
+# requires cargo-apk / android NDK toolchain
+cargo apk run --target aarch64-linux-android
+```
+
+On device, `EmbeddedRuntime` uses the in-process Android path (JNI hooks) instead of host `adb`.
+
+## Architecture principle
+
+| Piece | Process ownership |
+|-------|-------------------|
+| Physics world | This process |
+| WorldControl | This process |
+| Virtual display buffer | This process (`SharedFrameBuffer`) |
+| Virtual input queue | This process |
+| Runtime service threads | This process |
+| Termux | Real Termux; on Android target, same device/app environment |
+
+## Controls
+
+- Type in the physics window → in-process virtual input → guest
+- **Ctrl+T** launch Termux (world command)
+- **Ctrl+Q** shutdown
+
+See [ARCHITECTURE.md](ARCHITECTURE.md).

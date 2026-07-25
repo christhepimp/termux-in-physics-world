@@ -1,5 +1,3 @@
-//! Spatial reality inhabited by the Android/Termux environment.
-
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
@@ -22,7 +20,6 @@ pub fn spawn_physics_world(
         RigidBody::Fixed,
         Collider::cuboid(12.0, 0.1, 12.0),
     ));
-
     commands.spawn((
         Name::new("InhabitantChassis"),
         InhabitantChassis,
@@ -32,7 +29,6 @@ pub fn spawn_physics_world(
         RigidBody::Fixed,
         Collider::cuboid(0.875, 0.6, 0.05),
     ));
-
     commands.spawn((
         Name::new("InhabitantScreen"),
         InhabitantScreen,
@@ -40,6 +36,5 @@ pub fn spawn_physics_world(
         RigidBody::Fixed,
         Collider::cuboid(0.8, 0.5, 0.01),
     ));
-
-    println!("[Physics] Inhabitant screen is a body inside the world boundary");
+    println!("[Physics] World bodies created inside physics process");
 }
