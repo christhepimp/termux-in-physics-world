@@ -17,7 +17,6 @@ bevy = { version = "0.15", default-features = false, features = [
 ] }
 bevy_rapier3d = { version = "0.28", features = ["simd-stable"] }
 portable-pty = "0.8"
-std-mutex = "0.1"
 
 [[bin]]
 name = "termux-world"

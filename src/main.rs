@@ -8,6 +8,7 @@ mod session;
 mod display;
 mod world;
 
+use bevy::input::keyboard::{Key, KeyboardInput};
 use bevy::prelude::*;
 use bevy_rapier3d::prelude::*;
 
@@ -27,8 +28,18 @@ fn main() {
         }))
         .add_plugins(RapierPhysicsPlugin::<NoUserData>::default())
         .add_plugins(SessionPlugin)
-        .add_systems(Startup, (setup_camera_light, spawn_physics_world, setup_terminal_display).chain())
-        .add_systems(Update, (forward_keyboard_to_session, update_terminal_texture, drain_session_to_display))
+        .add_systems(
+            Startup,
+            (setup_camera_light, spawn_physics_world, setup_terminal_display).chain(),
+        )
+        .add_systems(
+            Update,
+            (
+                forward_keyboard_to_session,
+                drain_session_to_display,
+                update_terminal_texture,
+            ),
+        )
         .run();
 }
 
@@ -68,7 +79,6 @@ fn setup_terminal_display(
         ..default()
     });
 
-    // Attach visual mesh to the physics screen entity if present.
     if let Ok(entity) = screen_query.get_single() {
         commands.entity(entity).insert((
             Mesh3d(meshes.add(Rectangle::new(1.6, 1.0))),
@@ -91,12 +101,9 @@ fn setup_terminal_display(
 
 fn forward_keyboard_to_session(
     keys: Res<ButtonInput<KeyCode>>,
-    mut text_events: EventReader<bevy::input::keyboard::KeyboardInput>,
+    mut text_events: EventReader<KeyboardInput>,
     mut bridge: ResMut<SessionBridge>,
 ) {
-    use bevy::input::ButtonInput;
-    use bevy::input::keyboard::{Key, KeyboardInput};
-
     for ev in text_events.read() {
         if !ev.state.is_pressed() {
             continue;
@@ -118,19 +125,16 @@ fn forward_keyboard_to_session(
                 let _ = bridge.write_str("\t");
             }
             Key::Escape => {
-                // handled below for quit; still forward to session
                 let _ = bridge.write_str("\x1b");
             }
             _ => {}
         }
     }
 
-    if keys.just_pressed(KeyCode::Escape) {
-        // Double-tap semantics avoided; Esc alone quits the prototype app.
+    // Hold Q to quit (Esc is useful inside the shell).
+    if keys.just_pressed(KeyCode::KeyQ) && keys.pressed(KeyCode::ControlLeft) {
         std::process::exit(0);
     }
-
-    let _ = ButtonInput::<KeyCode>::default();
 }
 
 fn drain_session_to_display(
